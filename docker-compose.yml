@@ -1,0 +1,71 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: onyx-db
+    environment:
+      POSTGRES_USER: onyx
+      POSTGRES_PASSWORD: onyx_dev
+      POSTGRES_DB: onyx
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U onyx -d onyx"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - onyx-network
+
+  backend:
+    build:
+      context: ./backend
+      target: dev
+    container_name: onyx-backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://onyx:onyx_dev@db:5432/onyx
+      SECRET_KEY: dev-secret-change-in-prod
+      CORS_ORIGINS: '["http://localhost:5173", "http://localhost:3000"]'
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
+      - yolo-models:/app/models
+      - uploads:/app/uploads
+    ports:
+      - "8000:8000"
+    networks:
+      - onyx-network
+    env_file:
+      - backend/.env.example
+
+  frontend:
+    build:
+      context: ./frontend
+      target: dev
+    container_name: onyx-frontend
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000
+      VITE_WS_URL: ws://localhost:8000
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    networks:
+      - onyx-network
+
+volumes:
+  pgdata:
+  yolo-models:
+  uploads:
+
+networks:
+  onyx-network:
+    driver: bridge
