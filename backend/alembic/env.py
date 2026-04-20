@@ -6,7 +6,6 @@ from sqlalchemy import pool
 from alembic import context
 
 from app.config import settings
-from app.models.base import Base
 
 # this is the Alembic Config object
 config = context.config
@@ -15,12 +14,14 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+# Use our new ShotEvent model's metadata
+from app.database import Base
 target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
-    url = settings.database_url
+    url = settings.DATABASE_URL
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -34,8 +35,8 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
-    configuration = config.get_section(config.config_ini_section)
-    configuration["sqlalchemy.url"] = settings.database_url
+    configuration = config.get_section(config.config_ini_section) or {}
+    configuration["sqlalchemy.url"] = settings.DATABASE_URL
     
     connectable = engine_from_config(
         configuration,

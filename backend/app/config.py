@@ -1,40 +1,40 @@
-"""Configuration management for Project ONYX backend."""
-
-from typing import List
+"""Configuration management for Project ONYX IoT backend."""
 
 from pydantic_settings import BaseSettings
+from functools import lru_cache
 
 
 class Settings(BaseSettings):
-    """Application settings from environment variables."""
-
+    """Global configuration from environment variables and .env file"""
+    
     # Database
-    database_url: str = "postgresql+asyncpg://onyx:onyx_dev@db:5432/onyx"
-
-    # JWT
-    secret_key: str = "dev-secret-change-in-prod"
-    algorithm: str = "HS256"
-    access_token_expire_minutes: int = 1440
-
+    DATABASE_URL: str = "postgresql+asyncpg://onyx:onyx@localhost:5432/onyx"
+    
+    # InfluxDB
+    INFLUXDB_URL: str = "http://localhost:8086"
+    INFLUXDB_TOKEN: str = ""
+    INFLUXDB_ORG: str = "onyx"
+    INFLUXDB_BUCKET: str = "sensor_data"
+    
+    # Redis
+    REDIS_URL: str = "redis://localhost:6379"
+    
+    # Business logic
+    SHOT_CONFIDENCE_MIN: float = 0.5
+    MAX_WS_CLIENTS: int = 50
+    
     # CORS
-    cors_origins: List[str] = ["http://localhost:5173", "http://localhost:3000"]
-
-    # Clock sync
-    max_sync_samples_per_batch: int = 10
-    sync_interval_seconds: int = 30
-
-    # Flash detection
-    flash_detection_prominence: float = 15.0
-    flash_detection_min_distance_frames: int = 5
-    flash_expected_count: int = 3
-
-    # CV worker
-    cv_frame_skip: int = 3
-    yolo_model_path: str = "/app/models/yolov8n-pose.pt"
-
+    CORS_ORIGINS: list = ["*"]
+    
     class Config:
         env_file = ".env"
-        case_sensitive = False
+        case_sensitive = True
 
 
-settings = Settings()
+@lru_cache
+def get_settings() -> Settings:
+    """Singleton settings instance"""
+    return Settings()
+
+
+settings = get_settings()

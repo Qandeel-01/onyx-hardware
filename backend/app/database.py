@@ -1,39 +1,44 @@
-"""Async database session management."""
+"""Async database session management for SQLAlchemy 2.x"""
 
 from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy.orm import declarative_base
 from fastapi import Depends
 
 from app.config import settings
 
+# Declarative base for ORM models
+Base = declarative_base()
 
+# Async engine with asyncpg driver
 engine = create_async_engine(
-    settings.database_url,
+    settings.DATABASE_URL,
     echo=False,
-    future=True,
     pool_size=10,
     max_overflow=20,
 )
 
-async_session = async_sessionmaker(
-    engine, class_=AsyncSession, expire_on_commit=False, future=True
+# Async session factory
+AsyncSessionLocal = async_sessionmaker(
+    engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
 )
 
 
-async def get_session() -> AsyncGenerator[AsyncSession, None]:
-    """Dependency to get database session."""
-    async with async_session() as session:
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """FastAPI dependency yielding AsyncSession"""
+    async with AsyncSessionLocal() as session:
         yield session
 
 
 async def init_db():
-    """Initialize database tables."""
+    """Initialize database tables"""
     async with engine.begin() as conn:
-        # Alembic handles migrations
-        pass
+        await conn.run_sync(Base.metadata.create_all)
 
 
 async def close_db():
-    """Close database connections."""
+    """Close database connections"""
     await engine.dispose()

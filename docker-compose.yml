@@ -1,12 +1,12 @@
 version: '3.9'
 
 services:
-  db:
-    image: postgres:15-alpine
-    container_name: onyx-db
+  postgres:
+    image: postgres:16
+    container_name: onyx-postgres
     environment:
       POSTGRES_USER: onyx
-      POSTGRES_PASSWORD: onyx_dev
+      POSTGRES_PASSWORD: onyx
       POSTGRES_DB: onyx
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -20,51 +20,82 @@ services:
     networks:
       - onyx-network
 
-  backend:
-    build:
-      context: ./backend
-      target: dev
-    container_name: onyx-backend
-    depends_on:
-      db:
-        condition: service_healthy
+  influxdb:
+    image: influxdb:2.7
+    container_name: onyx-influxdb
     environment:
-      DATABASE_URL: postgresql+asyncpg://onyx:onyx_dev@db:5432/onyx
-      SECRET_KEY: dev-secret-change-in-prod
-      CORS_ORIGINS: '["http://localhost:5173", "http://localhost:3000"]'
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: onyx
+      DOCKER_INFLUXDB_INIT_PASSWORD: onyxpassword
+      DOCKER_INFLUXDB_INIT_ORG: onyx
+      DOCKER_INFLUXDB_INIT_BUCKET: sensor_data
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: onyx-super-secret-token
     volumes:
-      - ./backend/app:/app/app
-      - ./backend/alembic:/app/alembic
-      - yolo-models:/app/models
-      - uploads:/app/uploads
+      - influxdb-data:/var/lib/influxdb2
     ports:
-      - "8000:8000"
+      - "8086:8086"
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     networks:
       - onyx-network
-    env_file:
-      - backend/.env.example
 
-  frontend:
-    build:
-      context: ./frontend
-      target: dev
-    container_name: onyx-frontend
-    environment:
-      VITE_API_BASE_URL: http://localhost:8000
-      VITE_WS_URL: ws://localhost:8000
+  redis:
+    image: redis:7-alpine
+    container_name: onyx-redis
+    command: redis-server --appendonly yes
     volumes:
-      - ./frontend/src:/app/src
-      - ./frontend/public:/app/public
-      - /app/node_modules
+      - redis-data:/data
     ports:
-      - "5173:5173"
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - onyx-network
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: onyx-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://onyx:onyx@postgres:5432/onyx
+      INFLUXDB_URL: http://influxdb:8086
+      INFLUXDB_TOKEN: onyx-super-secret-token
+      INFLUXDB_ORG: onyx
+      INFLUXDB_BUCKET: sensor_data
+      REDIS_URL: redis://redis:6379
+      SHOT_CONFIDENCE_MIN: "0.5"
+      MAX_WS_CLIENTS: "50"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     networks:
       - onyx-network
 
 volumes:
   pgdata:
-  yolo-models:
-  uploads:
+  influxdb-data:
+  redis-data:
 
 networks:
   onyx-network:

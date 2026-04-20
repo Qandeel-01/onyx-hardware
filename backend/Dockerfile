@@ -1,17 +1,8 @@
 # ── Stage 1: system deps + Python deps ──────────────────────────────
 FROM python:3.11-slim AS base
 
-# OpenCV headless needs these system libraries.
-# ffmpeg is required for cv_worker video probing.
-# libpq-dev is needed by asyncpg to compile against libpq.
+# System dependencies for asyncpg, curl healthchecks
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        libopencv-dev \
-        libglib2.0-0 \
-        libsm6 \
-        libxext6 \
-        libxrender1 \
-        libgomp1 \
-        ffmpeg \
         libpq-dev \
         gcc \
         curl \
@@ -19,9 +10,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY pyproject.toml .
+COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
-    && pip install --no-cache-dir --default-timeout=1000 -e "."
+    && pip install --no-cache-dir -r requirements.txt
 
 # ── Stage 2: development (hot-reload, source mounted as volume) ──────
 FROM base AS dev
@@ -29,10 +20,7 @@ FROM base AS dev
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-
-ENTRYPOINT ["/entrypoint.sh"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
 # ── Stage 3: production (gunicorn, minimal) ─────────────────────────
 FROM base AS prod
