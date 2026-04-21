@@ -103,7 +103,8 @@ class ApiClient {
   ): Promise<ClockCalibration> {
     const response = await this.client.post<ClockCalibration>(
       `/sessions/${sessionId}/calibrations`,
-      { rtt_ms, offset_ms }
+      null,
+      { params: { rtt_ms, offset_ms } }
     );
     return response.data;
   }

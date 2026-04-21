@@ -25,9 +25,6 @@ export const LiveAnalysisDashboard: React.FC<LiveAnalysisDashboardProps> = ({
   const [isLive, setIsLive] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [clockSync, setClockSync] = useState<{ offsetMs: number; rttMs: number } | null>(null);
-  const [simulate, setSimulate] = useState(false);
-  const [simIntervalMs, setSimIntervalMs] = useState(1500);
 
   // Fetch session data
   useEffect(() => {
@@ -61,6 +58,8 @@ export const LiveAnalysisDashboard: React.FC<LiveAnalysisDashboardProps> = ({
   const refreshShotsAndStatsRef = useRef(refreshShotsAndStats);
   refreshShotsAndStatsRef.current = refreshShotsAndStats;
 
+  const [clockSync, setClockSync] = useState<{ offsetMs: number; rttMs: number } | null>(null);
+
   const { connected, calibrated, offsetMs, rttMs, wsEnabled } = useShotWebSocket({
     sessionId,
     onShotReceived: (shot) => {
@@ -71,7 +70,9 @@ export const LiveAnalysisDashboard: React.FC<LiveAnalysisDashboardProps> = ({
       setError(errorMsg);
     },
     onCalibrated: (offset, rtt) => {
-      console.log(`Clock calibrated: offset=${offset}ms, rtt=${rtt}ms`);
+      // Real SYNC_PONG from ws_shots.py — update display and persist to DB.
+      setClockSync({ offsetMs: offset, rttMs: rtt });
+      void apiClient.recordCalibration(sessionId, rtt, offset).catch(() => {});
     },
   });
 
@@ -100,26 +101,6 @@ export const LiveAnalysisDashboard: React.FC<LiveAnalysisDashboardProps> = ({
       setError(`Failed to simulate shot: ${err}`);
     }
   }, [sessionId, refreshShotsAndStats]);
-
-  useEffect(() => {
-    if (!simulate) return;
-    const id = window.setInterval(() => {
-      handleGenerateShot();
-    }, simIntervalMs);
-    return () => window.clearInterval(id);
-  }, [simulate, simIntervalMs, handleGenerateShot]);
-
-  const handleMockClockSync = useCallback(async () => {
-    try {
-      // Record a calibration entry in the mock backend and display it.
-      const offset = Math.round((Math.random() - 0.5) * 60); // -30..+30ms
-      const rtt = Math.round(10 + Math.random() * 40); // 10..50ms
-      const c = await apiClient.recordCalibration(sessionId, rtt, offset);
-      setClockSync({ offsetMs: c.offset_ms, rttMs: c.rtt_ms });
-    } catch (err) {
-      setError(`Failed to record calibration: ${err}`);
-    }
-  }, [sessionId]);
 
   const handleEndSession = async () => {
     try {
@@ -179,8 +160,8 @@ export const LiveAnalysisDashboard: React.FC<LiveAnalysisDashboardProps> = ({
               <div className="text-center">
                 <div className="text-sm text-gray-400">Clock Sync</div>
                 <div className="text-lg font-bold text-cyan-400">
-                  {(clockSync ? clockSync.offsetMs : offsetMs)}ms ±{' '}
-                  {(clockSync ? clockSync.rttMs : rttMs)}ms
+                  {clockSync?.offsetMs ?? offsetMs}ms ±{' '}
+                  {clockSync?.rttMs ?? rttMs}ms
                 </div>
               </div>
             )}
@@ -189,33 +170,10 @@ export const LiveAnalysisDashboard: React.FC<LiveAnalysisDashboardProps> = ({
               <button
                 onClick={handleGenerateShot}
                 className="px-3 py-2 bg-secondary hover:bg-gray-700 text-white rounded-lg transition-colors"
+                title="Manually inject a test shot event via REST"
               >
                 + Shot
               </button>
-              <button
-                onClick={() => setSimulate((s) => !s)}
-                className={`px-3 py-2 rounded-lg transition-colors text-white ${
-                  simulate ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-secondary hover:bg-gray-700'
-                }`}
-              >
-                {simulate ? 'Simulating' : 'Simulate'}
-              </button>
-              <button
-                onClick={handleMockClockSync}
-                className="px-3 py-2 bg-secondary hover:bg-gray-700 text-white rounded-lg transition-colors"
-              >
-                Clock Sync
-              </button>
-              <select
-                value={simIntervalMs}
-                onChange={(e) => setSimIntervalMs(Number(e.target.value))}
-                className="px-2 py-2 bg-secondary text-white rounded-lg border border-gray-600"
-                title="Simulation speed"
-              >
-                <option value={3000}>Slow</option>
-                <option value={1500}>Normal</option>
-                <option value={750}>Fast</option>
-              </select>
             </div>
             {isLive && (
               <button

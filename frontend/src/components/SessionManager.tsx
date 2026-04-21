@@ -61,6 +61,27 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
           Real-time Padel Analytics with Wearable IoT
         </p>
 
+        <p className="text-xs text-gray-500 mb-4">
+          API docs:{' '}
+          <a
+            href="http://127.0.0.1:8000/docs"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-accent underline hover:text-cyan-300"
+          >
+            :8000/docs
+          </a>
+          {' · '}
+          <a
+            href="/docs"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-accent underline hover:text-cyan-300"
+          >
+            /docs (Vite proxy)
+          </a>
+        </p>
+
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">

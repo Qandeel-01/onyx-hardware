@@ -19,17 +19,10 @@ interface WebSocketState {
   rttMs: number;
 }
 
+// Set VITE_ENABLE_WS=true in `.env` or `.env.local` (Vite only exposes VITE_* at build/dev start).
+// Default true when unset so local dev works after a cold start without forgetting the flag.
 const WS_ENABLED =
-  String(import.meta.env.VITE_ENABLE_WS ?? 'false').toLowerCase() === 'true';
-
-/** Host part for URLs (IPv6 needs brackets). */
-function wsHostFromLocation(): string {
-  const h = window.location.hostname;
-  if (h.includes(':') && !h.startsWith('[')) {
-    return `[${h}]`;
-  }
-  return h;
-}
+  String(import.meta.env.VITE_ENABLE_WS ?? 'true').toLowerCase() === 'true';
 
 /** Backend origin for WebSocket (must match where FastAPI runs). */
 function getWebSocketBaseUrl(): string {
@@ -47,12 +40,10 @@ function getWebSocketBaseUrl(): string {
       /* fall through */
     }
   }
-  // Dev: connect to API on same host as the page (not 127.0.0.1 — that breaks when you open
-  // http://192.168.x.x:5173 or from another device; 127.0.0.1 would target the client only).
-  if (import.meta.env.DEV) {
-    const wsScheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    return `${wsScheme}://${wsHostFromLocation()}:8000`;
-  }
+  // Same origin as the page so Vite’s `/ws` proxy (see vite.config) reaches FastAPI.
+  // REST already defaults to relative `/api` in dev; previously WS used `:8000` here and
+  // failed with 1006 when nothing accepted TCP on 8000 from the browser (e.g. API only
+  // reachable via the dev proxy, or Docker-only binding).
   const wsScheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${wsScheme}//${window.location.host}`;
 }
@@ -150,9 +141,12 @@ export const useShotWebSocket = ({
   handleMessageRef.current = handleMessage;
 
   const disconnect = useCallback(() => {
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
+    const ws = wsRef.current;
+    wsRef.current = null;
+    if (!ws) return;
+    // Explicit 1000 avoids browsers surfacing reserved code 1005 ("no status") on unmount/Strict Mode.
+    if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+      ws.close(1000, 'Client closed');
     }
   }, []);
 
@@ -168,7 +162,13 @@ export const useShotWebSocket = ({
 
       wsRef.current.onopen = () => {
         setState((prev) => ({ ...prev, connected: true }));
+        // Send first ping immediately, then every 5s for continuous clock sync.
         queueMicrotask(() => sendSyncPing());
+        const pingInterval = window.setInterval(() => {
+          if (wsRef.current?.readyState === WebSocket.OPEN) sendSyncPing();
+          else window.clearInterval(pingInterval);
+        }, 5000);
+        (wsRef.current as WebSocket & { _pingInterval?: number })._pingInterval = pingInterval;
       };
 
       wsRef.current.onmessage = (event) => {
@@ -183,13 +183,16 @@ export const useShotWebSocket = ({
       };
 
       wsRef.current.onclose = (ev) => {
+        const ws = wsRef.current as (WebSocket & { _pingInterval?: number }) | null;
+        if (ws?._pingInterval) window.clearInterval(ws._pingInterval);
         setState((prev) => ({ ...prev, connected: false }));
         if (!WS_ENABLED) return;
-        if (ev.code === 1000 || ev.code === 1001) return;
+        // 1000/1001 normal; 1005 = "no status" (often client close() without code or proxy quirk — not actionable).
+        if (ev.code === 1000 || ev.code === 1001 || ev.code === 1005) return;
         const reason =
           ev.reason?.trim() ||
           (ev.code === 1006
-            ? 'connection failed — start API on port 8000 (uvicorn --host 0.0.0.0), PostgreSQL up, session from POST /api/sessions'
+            ? 'connection failed — confirm API on :8000 (/docs), Postgres up, and Vite proxy /ws (ws: true); restart `npm run dev` after env or vite.config.js changes'
             : `closed with code ${ev.code}`);
         onErrorRef.current?.(`WebSocket: ${reason}`);
       };
