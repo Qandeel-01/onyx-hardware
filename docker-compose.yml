@@ -1,0 +1,74 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: onyx-db
+    environment:
+      POSTGRES_DB: onyx
+      POSTGRES_USER: onyx
+      POSTGRES_PASSWORD: onyx
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+    volumes:
+      - onyx_db_data:/var/lib/postgresql/data
+    ports:
+      # Use 5433 on host if a local PostgreSQL already binds 5432
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U onyx"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - onyx-network
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: onyx-api
+    environment:
+      DATABASE_URL: postgresql://onyx:onyx@db:5432/onyx
+      ENV: production
+      LOG_LEVEL: INFO
+      ALLOWED_ORIGINS: "http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    networks:
+      - onyx-network
+    # Tables are created by app.main Base.metadata.create_all; alembic.ini in repo is incomplete for `alembic upgrade`.
+    command: >
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: onyx-frontend
+    environment:
+      NODE_ENV: development
+      # Browser on host must reach API on host :8000 (not Docker service name "api").
+      VITE_API_URL: http://localhost:8000/api
+      VITE_WS_URL: ws://localhost:8000
+      VITE_ENABLE_WS: "true"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0 --port 5173"
+    networks:
+      - onyx-network
+    depends_on:
+      - api
+
+volumes:
+  onyx_db_data:
+  frontend_node_modules:
+
+networks:
+  onyx-network:
+    driver: bridge
