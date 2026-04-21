@@ -1,0 +1,23 @@
+fix/
+node_modules/
+.venv/
+venv/
+backend/venv/
+__pycache__/
+*.py[cod]
+.env
+.env.local
+.env.*.local
+frontend/dist/
+
+# Logs & tooling
+*.log
+npm-debug.log*
+.pytest_cache/
+.mypy_cache/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
